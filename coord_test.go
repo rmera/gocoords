@@ -41,8 +41,28 @@ func TestGeo(Te *testing.T) {
 	E.MulElem(A,B)
 	fmt.Println(T,"\n",T,"\n",A,"\n",B,"\n",ar,ac,A.Sum())
 	//View:=Zeros(1,1)
-	View:=A.AtomCoords(0)
+	View:=A.RowView(0)
 	View.Set(0,0,100)
 	fmt.Println("View\n",A,"\n",View)
 	
+}
+
+
+func TestSomeRows(Te *testing.T){
+	a:=[]float64{1.0,2.0,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18}
+	A:=NewCoordMatrix(a,6,3)
+	B:=Zeros(3,3)
+	cind:=[]int{1,3,5}
+	err:=B.SomeRowsSafe(A,cind)
+	if err!=nil{
+		fmt.Println(err.Error())
+		}
+	fmt.Println(A,"\n",B)
+	B.Set(1,1,55)
+	B.Set(2,2,66)
+	fmt.Println("Changed B")
+	fmt.Println(A,"\n",B)
+	A.SetRows(B,cind)
+	fmt.Println("Now A should see changes in B")
+	fmt.Println(A,"\n",B)
 }

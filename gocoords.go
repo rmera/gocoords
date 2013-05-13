@@ -34,8 +34,8 @@ import "github.com/skelterjohn/go.matrix"
 
 /*Here I make a -very incomplete- implementation of the gonum api backed by go.matrix, which will enable me to port gochem to gonum. 
  * Since the agreement in the gonum community was NOT to build a temporary implementation, I just build the functions that
- * gochem uses, only the type Float64, and do not export any of the functions.
- * all the names will start with gn (i.e. RandomFunc becomes gnRandomFunc) so its latter easy to use search and replace to set the 
+ * gochem uses, on my own type (which should implement all the relevant gonum interfaces).
+ * all the gonum-owned names will start with gn (i.e. RandomFunc becomes gnRandomFunc) so its latter easy to use search and replace to set the 
  * correct import path when gonum is implemented (such as gonum.RandomFunc)*/
  
  
@@ -94,21 +94,51 @@ func (F *CoordMatrix) SomeRows(A *CoordMatrix,clist []int){
 	if ac!=fc || fr!=len(clist) || ar<len(clist){
 		panic(ErrRowLength)
 	}
-	r:=make([]float64,len(clist)*ac)
 	for key,val:=range(clist){
 		for j:=0;j<ac;j++{
 			F.Set(key,j,A.Get(val,j))
 		}
 	} 
+}	
+	
+	
 
-//same as before but returns an error instead of panicking
-(F *CoordMatrix) SafeSomeRows(A *CoordMatrix,clist []int) error{
-	return gnMaybe(F.SomeRows(A,clist))
+//same as before but returns an error instead of panicking.
+//The recover code is from the gonum API proposal by Dan Kortschak
+func (F *CoordMatrix) SomeRowsSafe(A *CoordMatrix,clist []int) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			var ok bool
+			if err, ok = r.(gnError); ok {
+				return
+			}
+			panic(r)
+		}
+	}()
+	F.SomeRows(A,clist)
+	return 
 }
+
+func (F *CoordMatrix) SetRows(A *CoordMatrix,clist []int){
+	ar,ac:=A.Dims()
+	fr,fc:=F.Dims()
+	if ac!=fc || fr<len(clist) || ar<len(clist){
+		panic(ErrRowLength)
+	}
+	for key,val:=range(clist){
+		for j:=0;j<ac;j++{
+			F.Set(val,j,A.Get(key,j))
+		}
+	} 
+} 
+
+
+
 
 func (F *CoordMatrix) View(A *CoordMatrix,i,j,rows,cols int) {
 	*F=CoordMatrix{A.GetMatrix(i,j,rows,cols)}
 	}
+
 
 func (F *CoordMatrix) RowView(i int) *CoordMatrix{
 	a:=NewEmptyCoordMatrix()
@@ -301,7 +331,8 @@ func (F *CoordMatrix) T(A *CoordMatrix)  {
 } 
  
  
- /**These are from the current proposal for gonum, will be taken out when gonum is implemented**/
+ /**These are from the current proposal for gonum, by Dan Kortschak. It will be taken out
+  * from here when gonum is implemented**/
  
  // A Panicker is a function that may panic.
 type Panicker func()
@@ -313,7 +344,7 @@ func gnMaybe(fn Panicker) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			var ok bool
-			if err, ok = r.(Error); ok {
+			if err, ok = r.(gnError); ok {
 				return
 			}
 			panic(r)
@@ -326,20 +357,20 @@ func gnMaybe(fn Panicker) (err error) {
  // Type Error represents matrix package errors. These errors can be recovered by Maybe wrappers.
 type gnError string
 
-func (err gnError) gnError() string { return string(err) }
+func (err gnError) Error() string { return string(err) }
  
  
  const (
-	ErrIndexOutOfRange = Error("matrix: index out of range")
-	ErrZeroLength      = Error("matrix: zero length in matrix definition")
-	ErrRowLength       = Error("matrix: row length mismatch")
-	ErrColLength       = Error("matrix: col length mismatch")
-	ErrSquare          = Error("matrix: expect square matrix")
-	ErrNormOrder       = Error("matrix: invalid norm order for matrix")
-	ErrSingular        = Error("matrix: matrix is singular")
-	ErrShape           = Error("matrix: dimension mismatch")
-	ErrIllegalStride   = Error("matrix: illegal stride")
-	ErrPivot           = Error("matrix: malformed pivot list")
+	ErrIndexOutOfRange = gnError("matrix: index out of range")
+	ErrZeroLength      = gnError("matrix: zero length in matrix definition")
+	ErrRowLength       = gnError("matrix: row length mismatch")
+	ErrColLength       = gnError("matrix: col length mismatch")
+	ErrSquare          = gnError("matrix: expect square matrix")
+	ErrNormOrder       = gnError("matrix: invalid norm order for matrix")
+	ErrSingular        = gnError("matrix: matrix is singular")
+	ErrShape           = gnError("matrix: dimension mismatch")
+	ErrIllegalStride   = gnError("matrix: illegal stride")
+	ErrPivot           = gnError("matrix: malformed pivot list")
 )
  
  
