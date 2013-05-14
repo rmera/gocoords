@@ -40,4 +40,9 @@ func TestGeo(Te *testing.T) {
 	E:=Zeros(ar,ac)
 	E.MulElem(A,B)
 	fmt.Println(T,"\n",T,"\n",A,"\n",B,"\n",ar,ac,A.Sum())
+	//View:=Zeros(1,1)
+	View:=A.AtomCoords(0)
+	View.Set(0,0,100)
+	fmt.Println("View\n",A,"\n",View)
+	
 }

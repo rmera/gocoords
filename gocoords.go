@@ -50,6 +50,13 @@ func NewCoordMatrix(data []float64,rows,cols int) *CoordMatrix{
 
 }
  
+//returns and empty, but not nil, coordmatrix
+func NewEmptyCoordMatrix() *CoordMatrix{
+	var a  *matrix.DenseMatrix
+	return &CoordMatrix{a}
+
+} 
+ 
 func Zeros(rows, cols int) *CoordMatrix{
 	return &CoordMatrix{matrix.Zeros(rows,cols)}
 }
@@ -68,6 +75,50 @@ func Eye(ar,ac int) *CoordMatrix{
 }
 
 
+
+func (F *CoordMatrix) Row(i int) []float64{
+	c,r:=F.Dims()
+	if i>=r{
+		panic("Requested row out of bounds")
+	}
+	a:=make([]float64,c,c)
+	for j:=0;j<c;j++{
+		a[j]=F.At(i,j)
+	}
+	return a
+} 
+
+func (F *CoordMatrix) SomeRows(A *CoordMatrix,clist []int){
+	ar,ac:=A.Dims()
+	fr,fc:=F.Dims()
+	if ac!=fc || fr!=len(clist) || ar<len(clist){
+		panic(ErrRowLength)
+	}
+	r:=make([]float64,len(clist)*ac)
+	for key,val:=range(clist){
+		for j:=0;j<ac;j++{
+			F.Set(key,j,A.Get(val,j))
+		}
+	} 
+
+//same as before but returns an error instead of panicking
+(F *CoordMatrix) SafeSomeRows(A *CoordMatrix,clist []int) error{
+	return gnMaybe(F.SomeRows(A,clist))
+}
+
+func (F *CoordMatrix) View(A *CoordMatrix,i,j,rows,cols int) {
+	*F=CoordMatrix{A.GetMatrix(i,j,rows,cols)}
+	}
+
+func (F *CoordMatrix) RowView(i int) *CoordMatrix{
+	a:=NewEmptyCoordMatrix()
+	a.View(F,i,0,1,3)
+	return a
+}  
+
+
+
+  
   
 func (F *CoordMatrix)  Norm(i int)(float64){  
 	//temporary hack
@@ -248,6 +299,51 @@ func (F *CoordMatrix) T(A *CoordMatrix)  {
 		
 	}
 } 
+ 
+ 
+ /**These are from the current proposal for gonum, will be taken out when gonum is implemented**/
+ 
+ // A Panicker is a function that may panic.
+type Panicker func()
+ 
+ 
+ // Maybe will recover a panic with a type matrix.Error from fn, and return this error.
+// Any other error is re-panicked.
+func gnMaybe(fn Panicker) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			var ok bool
+			if err, ok = r.(Error); ok {
+				return
+			}
+			panic(r)
+		}
+	}()
+	fn()
+	return
+}
+ 
+ // Type Error represents matrix package errors. These errors can be recovered by Maybe wrappers.
+type gnError string
+
+func (err gnError) gnError() string { return string(err) }
+ 
+ 
+ const (
+	ErrIndexOutOfRange = Error("matrix: index out of range")
+	ErrZeroLength      = Error("matrix: zero length in matrix definition")
+	ErrRowLength       = Error("matrix: row length mismatch")
+	ErrColLength       = Error("matrix: col length mismatch")
+	ErrSquare          = Error("matrix: expect square matrix")
+	ErrNormOrder       = Error("matrix: invalid norm order for matrix")
+	ErrSingular        = Error("matrix: matrix is singular")
+	ErrShape           = Error("matrix: dimension mismatch")
+	ErrIllegalStride   = Error("matrix: illegal stride")
+	ErrPivot           = Error("matrix: malformed pivot list")
+)
+ 
+ 
+ 
  
  
  
