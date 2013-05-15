@@ -30,7 +30,7 @@ import "fmt"
 
 func TestGeo(Te *testing.T) {
 	a:=[]float64{1.0,2.0,3,4,5,6,7,8,9}
-	A:=NewCoordMatrix(a,3,3)
+	A:=NewCoord(a,3,3)
 	ar,ac:=A.Dims()
 	T:=Zeros(ar,ac)
 	T.T(A)
@@ -40,8 +40,8 @@ func TestGeo(Te *testing.T) {
 	E:=Zeros(ar,ac)
 	E.MulElem(A,B)
 	fmt.Println(T,"\n",T,"\n",A,"\n",B,"\n",ar,ac,A.Sum())
-	//View:=Zeros(1,1)
-	View:=A.RowView(0)
+	View:=Zeros(1,1)
+	View.RowView(A,0)
 	View.Set(0,0,100)
 	fmt.Println("View\n",A,"\n",View)
 	
@@ -50,12 +50,12 @@ func TestGeo(Te *testing.T) {
 
 func TestSomeRows(Te *testing.T){
 	a:=[]float64{1.0,2.0,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18}
-	A:=NewCoordMatrix(a,6,3)
-	B:=Zeros(3,3)
+	A:=NewCoord(a,6,3)
+	B:=Zeros(3,3)  //We should cause an error by modifying this.
 	cind:=[]int{1,3,5}
 	err:=B.SomeRowsSafe(A,cind)
 	if err!=nil{
-		fmt.Println(err.Error())
+		Te.Error(err)
 		}
 	fmt.Println(A,"\n",B)
 	B.Set(1,1,55)
@@ -65,4 +65,22 @@ func TestSomeRows(Te *testing.T){
 	A.SetRows(B,cind)
 	fmt.Println("Now A should see changes in B")
 	fmt.Println(A,"\n",B)
+}
+
+func TestScale(Te *testing.T){
+	a:=[]float64{1.0,2.0,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18}
+	A:=NewCoord(a,6,3)
+	B:=Zeros(6,3)
+	A.Scale(3,A)
+	B.Scale(2,A)
+	fmt.Println(A,"\n",B)
+	Row:=NewCoord([]float64{10,20,30},1,3)
+	A.AddRow(A,Row)
+	fmt.Println("Additions")
+	fmt.Println(A)
+	A.SubRow(A,Row)
+	fmt.Println(A)
+	B.Pow(A,2)
+	fmt.Println("Squared",A,"\n",B)
+	
 }
