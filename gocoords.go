@@ -29,9 +29,9 @@
 package chem
 
 import (
-	"fmt"
 	"github.com/skelterjohn/go.matrix"
 	"math"
+	"sort"
 )
 
 /*Here I make a -very incomplete- implementation of the gonum api backed by go.matrix, which will enable me to port gochem to gonum.
@@ -39,12 +39,19 @@ import (
  * gochem uses, on my own type (which should implement all the relevant gonum interfaces).
  * all the gonum-owned names will start with gn (i.e. RandomFunc becomes gnRandomFunc) so its latter easy to use search and replace to set the
  * correct import path when gonum is implemented (such as gonum.RandomFunc)
-  */
+ */
 
+//This constant will be deleted when we merge with gochem
+const appzero float64 = 0.0000001 //used to correct floating point 
+//errors. Everything equal or less than this is considered zero.
+
+//The main container, must be able to implement any
+//gonum interface.
 type CoordMatrix struct {
 	*matrix.DenseMatrix
 }
 
+//Generate and returns a CoorMatrix from data.
 func NewCoord(data []float64, rows, cols int) *CoordMatrix {
 	if len(data) < cols*rows {
 		panic(NotEnoughElements)
@@ -53,28 +60,112 @@ func NewCoord(data []float64, rows, cols int) *CoordMatrix {
 
 }
 
-//returns and empty, but not nil, coordmatrix, it barely allocates memory
+//Returns and empty, but not nil, CoordMatrix. It barely allocates memory
 func EmptyCoord() *CoordMatrix {
 	var a *matrix.DenseMatrix
 	return &CoordMatrix{a}
 
 }
 
+//Returns an empty CoordMatrix with the given dimensions
 func Zeros(rows, cols int) *CoordMatrix {
 	return &CoordMatrix{matrix.Zeros(rows, cols)}
 }
 
-func Eye(ar, ac int) *CoordMatrix {
-	A := &CoordMatrix{matrix.Zeros(ar, ac)}
-	for i := 0; i < ar; i++ {
-		for j := 0; j < ac; j++ {
-			if i == j {
-				A.Set(i, j, 1.0)
-			}
-		}
-
+//Returns an identity matrix spanning span cols and rows
+func Eye(span int) *CoordMatrix {
+	A := &CoordMatrix{matrix.Zeros(span, span)}
+	for i := 0; i < span; i++ {
+		A.Set(i, i, 1.0)
 	}
 	return A
+}
+
+//This is a facility to sort Eigenvectors/Eigenvalues pairs
+//It satisfies the sort.Interface interface.
+type eigenpair struct {
+	//evecs must have as many rows as evals has elements.
+	evecs *CoordMatrix
+	evals sort.Float64Slice
+}
+
+func (E eigenpair) Less(i, j int) bool {
+	return E.evals[i] < E.evals[j]
+}
+func (E eigenpair) Swap(i, j int) {
+	E.evals.Swap(i, j)
+	//	E.evecs[i],E.evecs[j]=E.evecs[j],E.evecs[i]
+	E.evecs.SwapRows(i, j)
+}
+func (E eigenpair) Len() int {
+	return len(E.evals)
+}
+
+//gnEigen wraps the matrix.DenseMatrix.Eigen() function in order to guarantee 
+//That the eigenvectors and eigenvalues are sorted according to the eigenvalues
+//It also guarantees orthonormality and handness. I don't know how many of 
+//these are already guaranteed by Eig(). Will delete the unneeded parts 
+//And even this whole function when sure.
+func gnEigen(in *CoordMatrix, epsilon float64) (*CoordMatrix, []float64, error) {
+	var err error
+	if epsilon < 0 {
+		epsilon = appzero
+	}
+	evecsDM, vals, _ := in.Eigen()
+	temp := CoordMatrix{evecsDM}
+	evecs := &temp
+	evals := [3]float64{vals.Get(0, 0), vals.Get(1, 1), vals.Get(2, 2)}
+	f := func() { evecs.T(evecs) }
+	if err = gnMaybe(gnPanicker(f)); err != nil {
+		return nil, nil, err
+	}
+	eig := eigenpair{evecs, evals[:]}
+	sort.Sort(eig)
+	//Here I should orthonormalize vectors if needed instead of just complaining. 
+	//I think orthonormality is guaranteed by  DenseMatrix.Eig() If it is, Ill delete all this
+	//If not I'll add ortonormalization routines.
+	eigrows, _ := eig.evecs.Dims()
+	vectori := EmptyCoord()
+	vectorj := EmptyCoord()
+	for i := 0; i < eigrows; i++ {
+		vectori.RowView(eig.evecs, i)
+		for j := i + 1; j < eigrows; j++ {
+			vectorj.RowView(eig.evecs, j)
+			if math.Abs(vectori.Dot(vectorj)) > epsilon {
+				err = NotOrthogonal //return eig.evecs, evals[:], fmt.Errorf("Vectors not ortogonal!")
+			}
+		}
+		if math.Abs(vectori.Norm(2)-1) > epsilon {
+			//Of course I could just normalize the vectors instead of complaining.
+			//err= fmt.Errorf("Vectors not normalized %s",err.Error())
+
+		}
+	}
+	//Checking and fixing the handness of the matrix.This if-else is Jannes idea, 
+	//I don't really know whether it works.
+	eig.evecs.T(eig.evecs)
+	if eig.evecs.Det() < 0 {
+		eig.evecs.Scale(-1, eig.evecs) //SSC
+	} else {
+		/*	
+			eig.evecs.TransposeInPlace()
+			eig.evecs.ScaleRow(0,-1)
+			eig.evecs.ScaleRow(2,-1)
+			eig.evecs.TransposeInPlace()
+		*/
+		//	fmt.Println("all good, I guess")
+	}
+	eig.evecs.T(eig.evecs)
+	return eig.evecs, eig.evals, err //Returns a slice of evals
+}
+
+//Returns the singular value decomposition of matrix A
+func gnSVD(A *CoordMatrix) (*CoordMatrix, *CoordMatrix, *CoordMatrix, error) {
+	U, s, V, err := A.SVD()
+	theU := CoordMatrix{U}
+	sigma := CoordMatrix{s}
+	theV := CoordMatrix{V}
+	return &theU, &sigma, &theV, err
 }
 
 //Methods
@@ -279,6 +370,7 @@ func (F *CoordMatrix) Pow(A *CoordMatrix, exp float64) {
 	}
 }
 
+//Returns an array with the data in the ith row of F
 func (F *CoordMatrix) Row(i int) []float64 {
 	c, r := F.Dims()
 	if i >= r {
@@ -291,12 +383,13 @@ func (F *CoordMatrix) Row(i int) []float64 {
 	return a
 }
 
-//Puts a view of the given row of the matrix on the receiver
+//Puts a view of the given row of the matrix in the receiver
 func (F *CoordMatrix) RowView(A *CoordMatrix, i int) {
 	_, ac := A.Dims()
 	F.View(A, i, 0, 1, ac)
 }
 
+//Scale the matrix A by a number i, putting the result in the received.
 func (F *CoordMatrix) Scale(i float64, A *CoordMatrix) {
 	if A == F { //if A and F points to the same object.
 		F.scaleAux(i)
@@ -342,7 +435,6 @@ func (F *CoordMatrix) ScaleByRow(A, Row *CoordMatrix) {
 	ar, ac := A.Dims()
 	rr, rc := Row.Dims()
 	fr, fc := F.Dims()
-	fmt.Println(ar, ac, rr, rc, fr, fc)
 	if ac != rc || rr != 1 || ar != fr || ac != fc {
 		panic(gnErrShape)
 	}
@@ -356,6 +448,9 @@ func (F *CoordMatrix) ScaleByRow(A, Row *CoordMatrix) {
 	}
 }
 
+//Returns a matrix contaning all the ith rows of matrix A,
+//where i are the numbers in clist. The rows are in the same order
+//than the clist.
 func (F *CoordMatrix) SomeRows(A *CoordMatrix, clist []int) {
 	ar, ac := A.Dims()
 	fr, fc := F.Dims()
@@ -369,7 +464,9 @@ func (F *CoordMatrix) SomeRows(A *CoordMatrix, clist []int) {
 	}
 }
 
-//same as before but returns an error instead of panicking.
+//Returns a matrix contaning all the ith rows of matrix A,
+//where i are the numbers in clist. The rows are in the same order
+//than the clist. Returns an error instead of panicking.
 func (F *CoordMatrix) SomeRowsSafe(A *CoordMatrix, clist []int) (err error) {
 	f := func() { F.SomeRows(A, clist) }
 	return gnMaybe(gnPanicker(f))
@@ -388,6 +485,7 @@ func (F *CoordMatrix) SetRows(A *CoordMatrix, clist []int) {
 	}
 }
 
+//puts in F a matrix consisting in A over B
 func (F *CoordMatrix) Stack(A, B *CoordMatrix) {
 	Arows, Acols := A.Dims()
 	Brows, Bcols := B.Dims()
@@ -411,6 +509,8 @@ func (F *CoordMatrix) Stack(A, B *CoordMatrix) {
 }
 
 //not tested
+//returns a copy of the submatrix of A starting by the point i,j and
+//spanning rows rows and cols columns.
 func (F *CoordMatrix) SubMatrix(A *CoordMatrix, i, j, rows, cols int) {
 	temp := CoordMatrix{A.GetMatrix(i, j, rows, cols)}
 	F.Clone(&temp)
@@ -440,14 +540,27 @@ func (F *CoordMatrix) Sum() float64 {
 func (F *CoordMatrix) T(A *CoordMatrix) {
 	ar, ac := A.Dims()
 	fr, fc := F.Dims()
+
 	if ar != fc || ac != fr {
 		panic(gnErrShape)
 	}
-	for i := 0; i < ar; i++ {
-		for j := 0; j < ac; j++ {
-			F.Set(j, i, A.At(i, j))
-		}
+	//we do it in a different way if you pass the received as the argument 
+	//(transpose in place)
+	if F == A {
+		for i := 0; i < ar; i++ {
+			for j := 0; j < i; j++ {
+				tmp := A.At(i, j)
+				F.Set(i, j, A.At(j, i))
+				F.Set(j, i, tmp)
+			}
 
+		}
+	} else {
+		for i := 0; i < ar; i++ {
+			for j := 0; j < ac; j++ {
+				F.Set(j, i, A.At(i, j))
+			}
+		}
 	}
 }
 
@@ -493,6 +606,8 @@ type gnError string
 func (err gnError) Error() string { return string(err) }
 
 const (
+	//RM: the first 2 are mine.
+	NotOrthogonal        = gnError("matrix: not enough elements")
 	NotEnoughElements    = gnError("matrix: not enough elements")
 	gnErrIndexOutOfRange = gnError("matrix: index out of range")
 	gnErrZeroLength      = gnError("matrix: zero length in matrix definition")

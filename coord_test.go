@@ -109,3 +109,13 @@ func TestRowMod(Te *testing.T) {
 	fmt.Println("Unitarized", row)
 
 }
+
+func TestEigen(Te *testing.T) {
+	a := []float64{1, 2, 0, 2, 1, 0, 0, 0, 1}
+	A := NewCoord(a, 3, 3)
+	evecs, evals, err := gnEigen(A, -1)
+	fmt.Println(evecs, "\n", evals, "\n", err)
+	U, s, V, err := gnSVD(A)
+	fmt.Println("U\n", U, "\nsigma\n", s, "V\n", V, "\n", err)
+
+}
